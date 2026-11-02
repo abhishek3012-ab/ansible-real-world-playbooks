@@ -1,0 +1,111 @@
+
+---
+- name: Configure automated Linux server backups
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    backup_source: /etc
+    backup_name: etc
+    backup_directory: /var/backups/server
+    backup_script: /usr/local/bin/server-backup.sh
+    backup_retention_days: 7
+
+  pre_tasks:
+    - name: Validate backup configuration
+      ansible.builtin.assert:
+        that:
+          - backup_source | length > 0
+          - backup_name | length > 0
+          - backup_directory | length > 0
+          - backup_retention_days | int >= 1
+        fail_msg: "Invalid backup configuration."
+
+    - name: Check backup source directory
+      ansible.builtin.stat:
+        path: "{{ backup_source }}"
+      register: backup_source_status
+
+    - name: Ensure backup source exists
+      ansible.builtin.assert:
+        that:
+          - backup_source_status.stat.exists
+        fail_msg: "Backup source directory does not exist."
+
+  tasks:
+    - name: Install backup utility
+      ansible.builtin.apt:
+        name: tar
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create backup directory
+      ansible.builtin.file:
+        path: "{{ backup_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Create automated backup script
+      ansible.builtin.copy:
+        dest: "{{ backup_script }}"
+        owner: root
+        group: root
+        mode: '0700'
+        content: |
+          #!/bin/bash
+
+          set -euo pipefail
+
+          SOURCE={{ backup_source | quote }}
+          DEST={{ backup_directory | quote }}
+          BACKUP_NAME={{ backup_name | quote }}
+          RETENTION_DAYS={{ backup_retention_days | int }}
+
+          DATE=$(date +%Y%m%d_%H%M%S)
+
+          mkdir -p "$DEST"
+
+          ARCHIVE="$DEST/${BACKUP_NAME}-${DATE}.tar.gz"
+
+          tar -czf "$ARCHIVE" \
+            -C "$(dirname "$SOURCE")" \
+            "$(basename "$SOURCE")"
+
+          find "$DEST" \
+            -type f \
+            -name "${BACKUP_NAME}-*.tar.gz" \
+            -mtime +"$RETENTION_DAYS" \
+            -delete
+
+    - name: Schedule daily automated backup
+      ansible.builtin.cron:
+        name: Daily Linux server configuration backup
+        user: root
+        minute: '0'
+        hour: '2'
+        job: "{{ backup_script }}"
+
+    - name: Verify backup script exists
+      ansible.builtin.stat:
+        path: "{{ backup_script }}"
+      register: backup_script_status
+
+    - name: Verify backup script permissions
+      ansible.builtin.assert:
+        that:
+          - backup_script_status.stat.exists
+          - backup_script_status.stat.executable
+        fail_msg: "Backup script was not created correctly."
+
+    - name: Display backup configuration
+      ansible.builtin.debug:
+        msg:
+          - "Backup source: {{ backup_source }}"
+          - "Backup destination: {{ backup_directory }}"
+          - "Backup schedule: Daily at 02:00 AM"
+          - "Retention period: {{ backup_retention_days }} days"
+          - "Backup script: {{ backup_script }}"

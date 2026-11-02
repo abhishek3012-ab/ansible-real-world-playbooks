@@ -1,0 +1,43 @@
+
+---
+- name: Configure Linux server monitoring
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Node Exporter
+      ansible.builtin.apt:
+        name: prometheus-node-exporter
+        state: present
+
+    - name: Enable Node Exporter service
+      ansible.builtin.systemd_service:
+        name: prometheus-node-exporter
+        state: started
+        enabled: true
+
+    - name: Verify Node Exporter service
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - prometheus-node-exporter
+      register: exporter_status
+      changed_when: false
+
+    - name: Check Node Exporter metrics endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9100/metrics
+        method: GET
+        status_code: 200
+        return_content: false
+
+    - name: Display monitoring status
+      ansible.builtin.debug:
+        msg: "Node Exporter status: {{ exporter_status.stdout }}"

@@ -1,0 +1,33 @@
+
+# Ansible temporary files
+*.retry
+*.log
+
+# Inventory files containing private infrastructure details
+inventory
+inventory.ini
+hosts
+
+# Sensitive variables and credentials
+vault-password
+vault-password.txt
+secrets.yml
+credentials.yml
+
+# SSH private keys
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.env.*
+
+# Editor files
+.vscode/
+.idea/

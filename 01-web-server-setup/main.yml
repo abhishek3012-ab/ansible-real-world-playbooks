@@ -1,0 +1,80 @@
+
+---
+- name: Configure and deploy Nginx web servers
+  hosts: webservers
+  become: true
+  gather_facts: true
+
+  vars:
+    website_title: "Enterprise Web Server"
+    website_message: "Nginx deployed successfully using Ansible"
+
+  tasks:
+    - name: Update Ubuntu package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Ensure Nginx is enabled and running
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Deploy website homepage
+      ansible.builtin.copy:
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>{{ website_title }}</title>
+          </head>
+          <body>
+              <h1>{{ website_title }}</h1>
+              <p>{{ website_message }}</p>
+          </body>
+          </html>
+      notify: Restart Nginx
+
+    - name: Verify Nginx configuration
+      ansible.builtin.command:
+        argv:
+          - nginx
+          - -t
+      register: nginx_config_check
+      changed_when: false
+
+    - name: Verify Nginx service status
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - nginx
+      register: nginx_status
+      changed_when: false
+
+    - name: Verify website HTTP response
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        method: GET
+        status_code: 200
+        return_content: false
+
+    - name: Display Nginx status
+      ansible.builtin.debug:
+        msg: "Nginx is {{ nginx_status.stdout }} and website is responding."
+
+  handlers:
+    - name: Restart Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted

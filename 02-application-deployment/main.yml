@@ -1,0 +1,117 @@
+
+---
+- name: Deploy Node.js application
+  hosts: appservers
+  become: true
+  gather_facts: true
+
+  vars:
+    app_name: myapp
+    app_user: myapp
+    app_directory: /opt/myapp
+
+    app_repository: "https://github.com/YOUR-USERNAME/YOUR-APP.git"
+    app_branch: main
+    app_port: 3000
+
+  tasks:
+    - name: Update Ubuntu package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Node.js, npm and Git
+      ansible.builtin.apt:
+        name:
+          - nodejs
+          - npm
+          - git
+        state: present
+
+    - name: Create dedicated application user
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        system: true
+        create_home: true
+        home: "/var/lib/{{ app_user }}"
+        shell: /bin/bash
+        state: present
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_directory }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Clone application repository
+      become_user: "{{ app_user }}"
+      ansible.builtin.git:
+        repo: "{{ app_repository }}"
+        dest: "{{ app_directory }}"
+        version: "{{ app_branch }}"
+        update: true
+        force: false
+      notify: Restart Application
+
+    - name: Install application dependencies
+      become_user: "{{ app_user }}"
+      community.general.npm:
+        path: "{{ app_directory }}"
+        production: true
+        state: present
+      notify: Restart Application
+
+    - name: Create systemd service for application
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ app_name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Node.js Application
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ app_user }}
+          Group={{ app_user }}
+          WorkingDirectory={{ app_directory }}
+          Environment=NODE_ENV=production
+          Environment=PORT={{ app_port }}
+          ExecStart=/usr/bin/npm start
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart Application
+
+    - name: Enable and start application service
+      ansible.builtin.systemd_service:
+        name: "{{ app_name }}"
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Verify application service
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ app_name }}"
+      register: app_status
+      changed_when: false
+
+    - name: Display application status
+      ansible.builtin.debug:
+        msg: "Application service is {{ app_status.stdout }}"
+
+  handlers:
+    - name: Restart Application
+      ansible.builtin.systemd_service:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: true
